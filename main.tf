@@ -13,7 +13,7 @@ resource "aws_kms_alias" "ecr_encryption" {
 }
 
 resource "aws_ecr_repository" "this" {
-  for_each = { for app in var.app_list : app.git_repo => app }
+  for_each = { for app in var.app_list : app.name => app }
 
   name                 = each.value.name
   image_tag_mutability = each.value.tag_mutability
@@ -66,20 +66,64 @@ resource "aws_ecr_registry_scanning_configuration" "this" {
   }
 }
 
+locals {
+  app_list_with_replication_enabled = [ for app in var.app_list : app if app.replication_enabled == true ]
+}
+
 data "aws_caller_identity" "current" {}
 
 resource "aws_ecr_replication_configuration" "this" {
-  for_each = { for app_name, app_config in var.app_list : app_name => app_config if app_config.replication_enabled }
+  for_each = { for app in local.app_list_with_replication_enabled : app.name => app }
 
-  rule {
-    destination {
-      region     = each.value.replica_destination.region
-      account_id = each.value.replica_destination.account_id == "self" ? data.aws_caller_identity.current.account_id : each.value.replica_destination.account_id
-    }
+  replication_configuration {
+    dynamic "rule" {
+      for_each = each.value.replica_destination
 
-    repository_filter {
-      filter      = each.value.name
-      filter_type = "PREFIX_MATCH"
+      content {
+        destination {
+          region     = rule.value.region
+          registry_id = rule.value.account_id == "self" ? data.aws_caller_identity.current.account_id : rule.value.account_id
+        }
+
+        repository_filter {
+          filter      = each.value.name
+          filter_type = "PREFIX_MATCH"
+        }
+      }
     }
   }
 }
+
+
+/*
+In order to replicate images to another AWS account, you need to create a replication policy in the destination account.
+This policy grants permission to the destination account to create a repository and replicate images to it.
+It's important to note that the replication policy should be created in the destination account, not the source account.
+
+Here's an example of a replication policy that grants permission to the destination account to create a repository and replicate images to it:
+
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
+resource "aws_ecr_registry_policy" "cross_account_replication" {
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "CrossAccountReplication"
+        Effect    = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${var.source_account_id}:root"
+        }
+        Action = [
+          "ecr:CreateRepository",
+          "ecr:BatchImportUpstreamImage",
+          "ecr:ReplicateImage"
+        ]
+        "Resource": "arn:aws:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/*"
+      }
+    ]
+  })
+}
+
+*/

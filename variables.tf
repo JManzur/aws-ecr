@@ -8,14 +8,14 @@ variable "name_prefix" {
 }
 
 variable "app_list" {
-  type = map(object({
+  type = list(object({
     name           = string
     tag_mutability = string
     replication_enabled = bool
-    replica_destination = map(object({
-      region     = optional(string)
-      account_id = optional(string)
-    }))
+    replica_destination = optional(list(object({
+      region     = string
+      account_id = string
+      })))
   }))
 
   description = "[REQUIRED] List of applications to create ECR repositories for."
