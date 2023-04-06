@@ -60,7 +60,7 @@ resource "aws_ecr_registry_scanning_configuration" "this" {
   rule {
     scan_frequency = var.scanning_config["frequency"]
     repository_filter {
-      filter      = "*"
+      filter      = var.scanning_config["filter"]
       filter_type = "WILDCARD"
     }
   }
@@ -93,7 +93,6 @@ resource "aws_ecr_replication_configuration" "this" {
     }
   }
 }
-
 
 /*
 In order to replicate images to another AWS account, you need to create a replication policy in the destination account.
