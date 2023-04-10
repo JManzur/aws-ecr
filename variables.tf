@@ -7,79 +7,68 @@ variable "name_prefix" {
   description = "[REQUIRED] Used to name and tag resources."
 }
 
-variable "environment" {
-  type        = string
-  description = "[REQUIRED] Used to name and tag resources."
+variable "app_list" {
+  type = list(object({
+    name                = string
+    tag_mutability      = string
+    replication_enabled = bool
+    replica_destination = optional(list(object({
+      region     = string
+      account_id = string
+    })))
+  }))
+
+  description = "[REQUIRED] List of applications to create ECR repositories for."
 }
+
 
 #######################################
 # Optional variables:
 #######################################
 
-variable "name_suffix" {
+variable "encryption_configuration" {
   type        = string
-  description = "[OPTIONAL] Used to name and tag global resources."
-  default     = ""
-}
+  description = "[OPTIONAL] The encryption configuration for the repository. Valid values are AES256 or KMS."
+  default     = "AES256"
 
-variable "capacity_providers" {
-  type        = list(string)
-  description = "[OPTIONAL] List of capacity providers to use for the cluster."
-  default     = ["FARGATE"]
-
+  # Validate allow values encryption_configuration
   validation {
-    condition     = length(var.capacity_providers) > 0
-    error_message = "At least one capacity provider must be specified."
-  }
-  validation {
-    condition     = length([for provider in var.capacity_providers : provider if provider == "FARGATE_SPOT" || provider == "FARGATE"]) == length(var.capacity_providers)
-    error_message = "Only FARGATE_SPOT and FARGATE are valid capacity providers."
+    condition     = contains(["AES256", "KMS"], var.encryption_configuration)
+    error_message = "The encryption_configuration must be AES256 or KMS."
   }
 }
 
-variable "enable_container_insights" {
-  type        = bool
-  description = "[OPTIONAL] Enable container insights for the cluster." # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/cloudwatch-container-insights.html
-  default     = true
-  # Default to true: https://aquasecurity.github.io/tfsec/v1.28.1/checks/aws/ecs/enable-container-insight/
+variable "scanning_config" {
+  type        = map(string)
+  description = "[OPTIONAL] The scanning configuration for the repository."
+
+  # Enhanced scanning: https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-enhanced.html
+  # Basic scanning: https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning-basic.html
+  validation {
+    condition     = contains(["BASIC", "ENHANCED"], var.scanning_config["type"])
+    error_message = "The type must be BASIC or ENHANCED."
+  }
+
+  validation {
+    condition     = contains(["SCAN_ON_PUSH", "CONTINUOUS_SCAN", "MANUAL"], var.scanning_config["frequency"])
+    error_message = "The frequency must be SCAN_ON_PUSH, CONTINUOUS_SCAN or MANUAL."
+  }
+
+  default = {
+    "type"      = "BASIC"
+    "frequency" = "SCAN_ON_PUSH"
+    "filter"    = "*"
+  }
 }
 
-variable "include_execute_command_configuration" {
+variable "force_delete" {
   type        = bool
-  description = "[OPTIONAL] Enable execute command configuration for the cluster." # https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-exec.html
+  description = "[OPTIONAL] When set to true, executing 'terraform destroy' will remove all images from the repository."
   default     = false
 }
 
-variable "execute_command_log_retention" {
+variable "images_to_keep" {
   type        = number
-  description = "[OPTIONAL] The number of days to retain log events in the log group for the execute command configuration."
-  default     = 7
-
-  validation {
-    condition = (
-      var.execute_command_log_retention == 1 ||
-      var.execute_command_log_retention == 3 ||
-      var.execute_command_log_retention == 5 ||
-      var.execute_command_log_retention == 7 ||
-      var.execute_command_log_retention == 14 ||
-      var.execute_command_log_retention == 30 ||
-      var.execute_command_log_retention == 60 ||
-      var.execute_command_log_retention == 90 ||
-      var.execute_command_log_retention == 120 ||
-      var.execute_command_log_retention == 150 ||
-      var.execute_command_log_retention == 180 ||
-      var.execute_command_log_retention == 365 ||
-      var.execute_command_log_retention == 400 ||
-      var.execute_command_log_retention == 545 ||
-      var.execute_command_log_retention == 731 ||
-      var.execute_command_log_retention == 1096 ||
-      var.execute_command_log_retention == 1827 ||
-      var.execute_command_log_retention == 2192 ||
-      var.execute_command_log_retention == 2557 ||
-      var.execute_command_log_retention == 2922 ||
-      var.execute_command_log_retention == 3288 ||
-      var.execute_command_log_retention == 3653
-    )
-    error_message = "The number of days to retain log events must be one of the following: 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653."
-  }
+  description = "[OPTIONAL] The number of images to retain in the repository."
+  default     = 30
 }
